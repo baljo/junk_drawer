@@ -6,21 +6,32 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 
 SerialLogHandler logHandler;
 
-const int ENERGY_THRESHOLD = 5000; // Adjust as needed
+// How long to record in milliseconds
+const unsigned long RECORDING_LENGTH_MS = 20000;
+const int ENERGY_THRESHOLD = 25000; // Adjust as needed
 
 // Define LED pins
 const int LED1_PIN = D7; // Use onboard D7 LED
 const int LED2_PIN = D6; // Use an external LED connected to D6
 
-unsigned long lastBlinkTime = 0; // For blinking LED
-const unsigned long BLINK_INTERVAL = 500; // Blink every 500ms
+// Forward declarations
+void buttonHandler(system_event_t event, int data);
+
+bool startRecording = false;
+
 
 void simulateServoActions() {
     // Simulate servo movements using LEDs
+    digitalWrite(LED1_PIN, HIGH); // Turn on LED1
+    delay(40);                   // Simulate movement time
+    digitalWrite(LED1_PIN, LOW);  // Turn off LED1
+
     digitalWrite(LED2_PIN, HIGH); // Turn on LED2
-    delay(200);                   // Simulate movement time
+    delay(50);                   // Simulate movement time
     digitalWrite(LED2_PIN, LOW);  // Turn off LED2
 }
+
+
 
 void analyzeBuffer(uint8_t *buf, size_t bufSize) {
     // Analyze raw audio data
@@ -31,43 +42,28 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
 
     for (size_t i = 0; i < samples; i++) {
         energy += abs(audioData[i]);
+        if (i % 1000 == 0) {
+            Log.info("Sample %d: %d %d", i, audioData[i], energy);
+        }
     }
 
     energy /= samples; // Average energy
 
-    // Print energy level to the terminal
-    Log.info("Energy Level: %d", energy);
-
-    // Blink onboard LED to indicate activity
-    digitalWrite(LED1_PIN, HIGH);
-    delay(50);
-    digitalWrite(LED1_PIN, LOW);
+    Log.info("Energy: %d", energy);
 
     if (energy > ENERGY_THRESHOLD) {
         simulateServoActions();
     }
 }
 
-void startSampling() {
-    Microphone_PDM_BufferSampling *samplingBuffer = new Microphone_PDM_BufferSampling_wav();
-    samplingBuffer->withCompletionCallback([](uint8_t *buf, size_t bufSize) {
-        // Process the audio buffer to detect beats
-        analyzeBuffer(buf, bufSize);
 
-        // Start the next sampling automatically
-        startSampling();
-    });
 
-    Microphone_PDM::instance().bufferSamplingStart(samplingBuffer);
-}
 
 void setup() {
-
-	Serial.begin(115200); // Initialize Serial at 9600 baud rate
-    while (!Serial) { // Wait for the serial connection
-        delay(10);
-    }
     Particle.connect();
+
+    // Register handler for the SETUP button
+    System.on(button_click, buttonHandler);
 
     // Initialize LEDs
     pinMode(LED1_PIN, OUTPUT);
@@ -91,19 +87,32 @@ void setup() {
     if (err) {
         Log.error("PDM decoder start err=%d", err);
     }
-
-    // Start continuous sampling
-    startSampling();
 }
 
 void loop() {
-    // Blink the onboard LED at regular intervals to indicate the program is running
-    unsigned long currentTime = millis();
-    if (currentTime - lastBlinkTime >= BLINK_INTERVAL) {
-        lastBlinkTime = currentTime;
-        digitalWrite(LED1_PIN, !digitalRead(LED1_PIN)); // Toggle LED state
-    }
-
-    // Let Microphone_PDM handle its internal operations
     Microphone_PDM::instance().loop();
+
+    if (startRecording) {
+        startRecording = false;
+        //digitalWrite(LED1_PIN, HIGH); // Indicate recording with LED1
+
+        Microphone_PDM_BufferSampling *samplingBuffer = new Microphone_PDM_BufferSampling_wav();
+        samplingBuffer->withCompletionCallback([](uint8_t *buf, size_t bufSize) {
+            digitalWrite(LED1_PIN, LOW); // Turn off recording LED
+
+            Log.info("done! buf=%x size=%d", (int)buf, (int)bufSize);
+
+            // Process the audio buffer to detect beats
+            analyzeBuffer(buf, bufSize);
+        });
+        samplingBuffer->withDurationMs(RECORDING_LENGTH_MS);
+
+        Microphone_PDM::instance().bufferSamplingStart(samplingBuffer);
+    }
+}
+
+
+// Button handler for the SETUP button, used to toggle recording on and off
+void buttonHandler(system_event_t event, int data) {
+    startRecording = true;
 }
