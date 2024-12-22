@@ -58,7 +58,6 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
 
 
 
-
 void setup() {
     Particle.connect();
 
