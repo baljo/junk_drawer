@@ -8,7 +8,7 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 SerialLogHandler logHandler;
 
 // How long to record in milliseconds
-const unsigned long RECORDING_LENGTH_MS = 200;
+const unsigned long RECORDING_LENGTH_MS = 50;
 const int ENERGY_THRESHOLD = 750; // Adjust as needed
 
 // Define LED pins
@@ -27,22 +27,36 @@ bool isSamplingInProgress = false;
 
 
 
+void santa2()  {
+  int speed = 10;
+  int wait = 1;
+
+  for(servo_pos = 0; servo_pos < 90; servo_pos += speed)   // goes from 0 degrees to xxx degrees
+  {                                                     // in steps of 1 degree
+    myservo.write(servo_pos);                           // tell servo to go to position in variable 'pos'
+    delay(wait);                                           // waits for the servo to reach the position
+  }
+
+  delay(wait);
+
+  for(servo_pos = 90; servo_pos>=1; servo_pos -= speed)      // goes from xxx degrees to 0 degrees
+  {                                                     // in steps of 1 degree
+    myservo.write(servo_pos);                           // tell servo to go to position in variable 'pos'
+    delay(wait);                                           // waits for the servo to reach the position
+  }
+}
+
+
+
 void santa()  {
-  int speed = 5;
+    int speed = 10;
+    int wait = 10;
 
-  for(servo_pos = 0; servo_pos < 175; servo_pos += speed)   // goes from 0 degrees to xxx degrees
-  {                                                     // in steps of 1 degree
-    myservo.write(servo_pos);                           // tell servo to go to position in variable 'pos'
-    delay(5);                                           // waits for the servo to reach the position
-  }
+    myservo.write(130);                           // tell servo to go to position in variable 'pos'
+    delay(wait);
+    myservo.write(-130);                           // tell servo to go to position in variable 'pos'
 
-  delay(50);
 
-  for(servo_pos = 175; servo_pos>=1; servo_pos -= speed)      // goes from xxx degrees to 0 degrees
-  {                                                     // in steps of 1 degree
-    myservo.write(servo_pos);                           // tell servo to go to position in variable 'pos'
-    delay(5);                                           // waits for the servo to reach the position
-  }
 }
 
 
@@ -85,7 +99,7 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
 
     // Trigger "servo" (LED) actions if energy exceeds threshold
     if (energy > ENERGY_THRESHOLD) {
-        simulateServoActions();
+        santa();
     }
 }
 
@@ -95,6 +109,9 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
 // Continuously samples 1-second chunks if startRecording == true
 // --------------------------------------------------------------------------
 void loop() {
+
+
+
     // Keep PDM driver alive
     Microphone_PDM::instance().loop();
 
@@ -143,10 +160,10 @@ void buttonHandler(system_event_t event, int data) {
 void setup() {
 
     myservo.attach(D1);                                 // attaches the servo on the D2 pin to the servo object
-    Wire.begin();                                       // Initialize I2C
+    //Wire.begin();                                       // Initialize I2C
 
     santa();
-    Serial.begin(9600);                                 // Start Serial communication
+    //Serial.begin(9600);                                 // Start Serial communication
     
     Particle.connect();
 
