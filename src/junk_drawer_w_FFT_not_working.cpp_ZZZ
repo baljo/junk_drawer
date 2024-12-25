@@ -1,0 +1,128 @@
+#include "Microphone_PDM.h"
+#include "MicWavWriter.h"
+#include "arduinoFFT.h" // Include the FFT library
+
+SYSTEM_THREAD(ENABLED);
+SYSTEM_MODE(SEMI_AUTOMATIC);
+
+SerialLogHandler logHandler;
+
+// How long to record in milliseconds
+const unsigned long RECORDING_LENGTH_MS = 100;
+const int ENERGY_THRESHOLD = 7000; // Adjust as needed
+
+// Define LED pins
+const int LED1_PIN = D7; // Use onboard D7 LED
+const int LED2_PIN = D6; // Use an external LED connected to D6
+
+bool startRecording = false;
+bool isSamplingInProgress = false;
+
+const uint16_t SAMPLES = 256; // Number of samples for FFT
+const double SAMPLING_FREQUENCY = 16000; // Sampling frequency in Hz
+
+double vReal[SAMPLES];
+double vImag[SAMPLES];
+ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, SAMPLES, SAMPLING_FREQUENCY);
+
+void simulateServoActions() {
+    digitalWrite(LED1_PIN, HIGH);
+    delay(40);
+    digitalWrite(LED1_PIN, LOW);
+
+    digitalWrite(LED2_PIN, HIGH);
+    delay(50);
+    digitalWrite(LED2_PIN, LOW);
+}
+
+void analyzeBuffer(uint8_t *buf, size_t bufSize) {
+    int16_t *audioData = (int16_t *)buf;
+    size_t samples = bufSize / sizeof(int16_t);
+
+    for (size_t i = 0; i < SAMPLES; i++) {
+        vReal[i] = (i < samples) ? audioData[i] : 0;
+        vImag[i] = 0;
+    }
+
+    FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+    FFT.compute(FFT_FORWARD);
+    FFT.complexToMagnitude();
+
+    double bandEnergy[4] = {0};
+    size_t bandSize = SAMPLES / 8; // Divide into 4 bands
+
+    for (size_t i = 0; i < SAMPLES / 2; i++) {
+        if (i < bandSize) bandEnergy[0] += vReal[i];
+        else if (i < 2 * bandSize) bandEnergy[1] += vReal[i];
+        else if (i < 3 * bandSize) bandEnergy[2] += vReal[i];
+        else bandEnergy[3] += vReal[i];
+    }
+
+    for (int i = 0; i < 4; i++) {
+        Log.info("Band %d Energy: %f", i, bandEnergy[i]);
+    }
+
+    int energy = 0;
+    for (size_t i = 0; i < samples; i++) {
+        energy += abs(audioData[i]);
+    }
+    energy /= samples;
+    Log.info("Current Energy Level: %d", energy);
+
+    if (energy > ENERGY_THRESHOLD) {
+        simulateServoActions();
+    }
+}
+
+void startSampling() {
+    Microphone_PDM_BufferSampling *samplingBuffer = new Microphone_PDM_BufferSampling_wav();
+    samplingBuffer->withCompletionCallback([](uint8_t *buf, size_t bufSize) {
+        analyzeBuffer(buf, bufSize);
+        if (startRecording) {
+            startSampling(); // Start next sample immediately
+        }
+    });
+    samplingBuffer->withDurationMs(RECORDING_LENGTH_MS);
+    Microphone_PDM::instance().bufferSamplingStart(samplingBuffer);
+}
+
+void loop() {
+    Microphone_PDM::instance().loop();
+}
+
+void buttonHandler(system_event_t event, int data) {
+    startRecording = !startRecording;
+    if (startRecording) {
+        digitalWrite(LED1_PIN, HIGH);
+        startSampling();
+    } else {
+        digitalWrite(LED1_PIN, LOW);
+    }
+}
+
+void setup() {
+    Particle.connect();
+
+    System.on(button_click, buttonHandler);
+
+    pinMode(LED1_PIN, OUTPUT);
+    pinMode(LED2_PIN, OUTPUT);
+
+    digitalWrite(LED1_PIN, LOW);
+    digitalWrite(LED2_PIN, LOW);
+
+    int err = Microphone_PDM::instance()
+        .withOutputSize(Microphone_PDM::OutputSize::SIGNED_16)
+        .withRange(Microphone_PDM::Range::RANGE_2048)
+        .withSampleRate(16000)
+        .init();
+
+    if (err) {
+        Log.error("PDM decoder init err=%d", err);
+    }
+
+    err = Microphone_PDM::instance().start();
+    if (err) {
+        Log.error("PDM decoder start err=%d", err);
+    }
+}
