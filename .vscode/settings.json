@@ -4,7 +4,7 @@
     "files.associations": {
         "*.ino": "cpp"
     },
-    "particle.targetDevice": "optic_jetpack",
+    "particle.targetDevice": "turtle_parakeet",
     "particle.targetPlatform": "p2",
     "particle.firmwareVersion": "5.6.0"
 }

@@ -69,10 +69,10 @@ void applyHammingWindow(double *data, size_t size) {
     }
 }
 
-void santa2() {
-    Log.info("Running santa2");
-    int speed = 10;
-    int wait = 1;
+void drum2() {
+
+    int speed = 15;
+    int wait = 5;
 
     for (servo_pos = 0; servo_pos < 90; servo_pos += speed) {
         myservo.write(servo_pos);
@@ -87,7 +87,7 @@ void santa2() {
     }
 }
 
-void santa() {
+void drum1() {
     int speed = 10;
     int wait = 30;
 
@@ -95,6 +95,7 @@ void santa() {
     delay(wait);
     myservo.write(-130); // tell servo to go to position in variable 'pos'
 }
+
 
 // --------------------------------------------------------------------------
 // Simulate servo actions with LED1 and LED2
@@ -106,7 +107,7 @@ void simulateServoActions() {
     delay(40);                    // Simulate movement time
     digitalWrite(LED1_PIN, LOW);  // Turn off LED1
     
-    santa();
+    drum1();
 
     digitalWrite(LED2_PIN, HIGH); // Turn on LED2
     delay(50);                    // Simulate movement time
@@ -172,7 +173,7 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
     size_t nr_of_bins = 12;
 
     // Select bins to cover a wide range of frequencies in pop music
-    size_t selectedBins[nr_of_bins] = {1, 3, 5, 8, 12, 14, 16, 18, 20, 22, 25, 29}; // Adjust as needed
+    size_t selectedBins[nr_of_bins] = {3, 5, 7, 9, 11, 14, 17, 20, 23, 26, 29, 32}; // Adjust as needed
 
     double maxMagnitude = 0;
     size_t maxBinIndex = 0;
@@ -188,8 +189,12 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
     }
 
     // Check if the first bin has the largest magnitude
-    if (vReal[1] > 300) {
-        santa();
+    if (vReal[2] > 300) {
+        drum1();
+    }
+
+   if (vReal[10] > 300) {
+        drum2();
     }
 
     //Log.info("Max Magnitude: %f", maxMagnitude);
@@ -337,7 +342,7 @@ void analyzeBuffer_text(uint8_t *buf, size_t bufSize) {
     
     // Trigger "servo" (LED) actions if energy exceeds threshold
     if (energy > ENERGY_THRESHOLD) {
-        santa();
+        drum1();
     }
 }
 
@@ -372,7 +377,7 @@ void setup() {
     myservo.attach(D1); // attaches the servo on the D1 pin to the servo object
     // Wire.begin(); // Initialize I2C
 
-    santa();
+    drum1();
     // Serial.begin(9600); // Start Serial communication
 
     Particle.connect();
