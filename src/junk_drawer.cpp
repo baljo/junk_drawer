@@ -213,11 +213,7 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
                 vReal[bin] = 0; // Set to zero if below threshold
             }
         }
-        // Log normalized magnitudes
-        // for (size_t i = 0; i < nr_of_bins; i++) {
-        //     size_t bin = selectedBins[i];
-        //     Log.info("Normalized Magnitude for bin %d: %f", bin, vReal[bin]);
-        // }
+
 
         // Apply a power function to enhance brightness variation
         const double gamma = 8.0; // Adjust gamma value to control contrast
@@ -225,12 +221,6 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
             size_t bin = selectedBins[i];
             vReal[bin] = pow(vReal[bin], gamma);
         }
-
-        // Log magnitudes after applying gamma
-        // for (size_t i = 0; i < nr_of_bins; i++) {
-        //     size_t bin = selectedBins[i];
-        //     Log.info("Magnitude after gamma for bin %d: %f", bin, vReal[bin]);
-        // }
 
 
         // Define base colors for the gradient
@@ -250,8 +240,8 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
             uint8_t g = (color >> 8) & 0xFF;
             uint8_t b = color & 0xFF;
 
-            double_t maxBrightness = 0.95; // Maximum brightness is 50%
-            // Adjust brightness based on the magnitude with a minimum threshold and scale to 50%
+            double_t maxBrightness = 0.95; // Maximum brightness is 95%
+            // Adjust brightness based on the magnitude with a minimum threshold and scale to 95%
             r = (uint8_t)(r * (fraction * (1.0 - minBrightness) + minBrightness) * maxBrightness);
             g = (uint8_t)(g * (fraction * (1.0 - minBrightness) + minBrightness) * maxBrightness);
             b = (uint8_t)(b * (fraction * (1.0 - minBrightness) + minBrightness) * maxBrightness);
@@ -259,8 +249,6 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
 
             strip.setPixelColor(i, strip.Color(r, g, b));
         }
-
-
 
         strip.show(); // Update the LEDs
 
@@ -292,59 +280,8 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
     //     Log.warn("Max Magnitude is zero, skipping normalization and LED update.");
     }
 
-    // Trigger "servo" (LED) actions if energy exceeds threshold
-    // if (vReal[0] > ENERGY_THRESHOLD) {
-    //     santa();
-    // }
 }
 
-
-
-// --------------------------------------------------------------------------
-// Analyze raw audio buffer to detect energy and optionally trigger servo
-// --------------------------------------------------------------------------
-void analyzeBuffer_text(uint8_t *buf, size_t bufSize) {
-   Log.info("Analyzing buffer..., buffer size %d, samples %d", bufSize, bufSize / sizeof(int16_t));
-    // Analyze raw audio data
-    int16_t *audioData = (int16_t *)buf; // Assuming SIGNED_16 format
-    size_t samples = bufSize / sizeof(int16_t);
-
-    if (samples > FFT_SIZE) {
-        samples = FFT_SIZE; // Limit the number of samples to FFT_SIZE
-    }
-
-    int energy = 0;
-
-    // Prepare data for FFT
-    for (size_t i = 0; i < samples; i++) {
-        vReal[i] = audioData[i];
-        vImag[i] = 0;
-        energy += abs(audioData[i]);
-    }
-
-    energy /= samples; // Average energy
-
-    // Perform FFT
-   // Log.info("Performing FFT...");
-    FFT.compute(vReal, vImag, samples, FFT_FORWARD);
-    FFT.complexToMagnitude(vReal, vImag, samples);
-
-    // Log the average energy level
-    Log.info("Average Energy Level: %d ", energy);
-
-    // Select 5 bins distributed along the human hearing range
-    size_t selectedBins[5] = {1, 3, 10, 20, 40}; // Example bin indices
-    for (size_t i = 0; i < 5; i++) {
-        size_t bin = selectedBins[i];
-        double frequency = bin * (SAMPLE_RATE / FFT_SIZE); // Calculate the frequency for each bin
-        Log.info("FFT Bin %d (%.1f Hz): %f", bin, frequency, vReal[bin]);
-    }
-    
-    // Trigger "servo" (LED) actions if energy exceeds threshold
-    if (energy > ENERGY_THRESHOLD) {
-        drum1();
-    }
-}
 
 
 // --------------------------------------------------------------------------
@@ -417,7 +354,7 @@ void setup() {
 
 // --------------------------------------------------------------------------
 // loop()
-// Continuously samples 1-second chunks if startRecording == true
+// Continuously samples chunks if startRecording == true
 // --------------------------------------------------------------------------
 void loop() {
     Microphone_PDM::instance().loop();
