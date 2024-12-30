@@ -1,9 +1,19 @@
+/*
+ * This program analyzes audio data from a microphone, performs FFT to extract frequency components,
+ * and visualizes the audio spectrum using NeoPixel LEDs. It also activates a servo motor when certain
+ * frequency bins have the largest magnitude.
+ * 
+ * Author: Thomas Vikström
+ * Date: 30.12.2024 19:44
+ */
+
 #include "Microphone_PDM.h"
 #include "MicWavWriter.h"
 #include <Wire.h>
 #include "PlainFFT.h"
 #include "neopixel.h"
 
+// Enable system threading and set system mode to semi-automatic
 SYSTEM_THREAD(ENABLED);
 SYSTEM_MODE(SEMI_AUTOMATIC);
 
@@ -19,21 +29,19 @@ uint32_t Wheel(byte WheelPos);
 
 // IMPORTANT: Set pixel COUNT, PIN and TYPE
 #if (PLATFORM_ID == 32)
-// MOSI pin MO
 #define PIXEL_PIN SPI1
-// MOSI pin D2
-// #define PIXEL_PIN SPI1
-#else // #if (PLATFORM_ID == 32)
+#else 
 #define PIXEL_PIN D3
 #endif
 
+// Define the number of pixels and the type of NeoPixel
 #define PIXEL_COUNT 12
 #define PIXEL_TYPE WS2812B
 
-
+// Create an instance of Adafruit_NeoPixel with the defined parameters
 Adafruit_NeoPixel strip(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
 
-
+// Initialize a serial log handler for logging
 SerialLogHandler logHandler;
 
 // How long to record in milliseconds
@@ -43,38 +51,44 @@ const int ENERGY_THRESHOLD = 270; // Adjust as needed
 const double SAMPLE_RATE = 16000.0; // Sample rate of the audio signal
 
 // Define LED pins
-const int LED1_PIN = D7; // Use onboard D7 LED
-const int LED2_PIN = D6; // Use an external LED connected to D6
+const int LED1_PIN = D7;        // Use onboard D7 LED
+const int LED2_PIN = D6;        // Use an external LED connected to D6
 
-Servo myservo; // create servo object to control a servo
+Servo myservo;                  // create servo object to control a servo
 
-int servo_pos = 0; // variable to store the servo position
+int servo_pos = 0;              // variable to store the servo position
 
-bool startRecording = false;
+bool startRecording = false;    // Track if recording is active
 
-// NEW: Track if a 1-second sampling is currently in progress
+// Track if a sampling is currently in progress
 bool isSamplingInProgress = false;
 
-PlainFFT FFT; // Initialize PlainFFT object
+PlainFFT FFT;                // Initialize PlainFFT object
 
 const size_t FFT_SIZE = 128; // Increase the number of samples for FFT
-double vReal[FFT_SIZE];
-double vImag[FFT_SIZE];
+double vReal[FFT_SIZE];      // Create an array for the real part of the FFT
+double vImag[FFT_SIZE];      // Create an array for the imaginary part of the FFT
 
 
-// Hamming window function
+// --------------------------------------------------------------------------
+// Hamming window function, reduces spectral leakage
+// --------------------------------------------------------------------------
 void applyHammingWindow(double *data, size_t size) {
     for (size_t i = 0; i < size; i++) {
         data[i] *= 0.54 - 0.46 * cos(2 * M_PI * i / (size - 1));
     }
 }
 
-void drum2() {
+
+// --------------------------------------------------------------------------
+// Move the servo motor to simulate drumming
+// --------------------------------------------------------------------------
+void drum2() {      
 
     int speed = 15;
     int wait = 5;
 
-    for (servo_pos = 0; servo_pos < 90; servo_pos += speed) {
+    for (servo_pos = 0; servo_pos < 90; servo_pos += speed) {   
         myservo.write(servo_pos);
         delay(wait);
     }
@@ -87,13 +101,17 @@ void drum2() {
     }
 }
 
+
+// --------------------------------------------------------------------------
+// Move the servo motor to simulate drumming
+// --------------------------------------------------------------------------
 void drum1() {
     int speed = 10;
     int wait = 30;
 
-    myservo.write(130); // tell servo to go to position in variable 'pos'
+    myservo.write(130); // tell servo to go to position
     delay(wait);
-    myservo.write(-130); // tell servo to go to position in variable 'pos'
+    myservo.write(-130); // tell servo to go to position
 }
 
 
@@ -115,6 +133,9 @@ void simulateServoActions() {
 }
 
 
+// --------------------------------------------------------------------------
+// Interpolate between two colors based on a fraction
+//--------------------------------------------------------------------------
 uint32_t interpolateColor(uint32_t color1, uint32_t color2, float fraction) {
     uint8_t r1 = (color1 >> 16) & 0xFF;
     uint8_t g1 = (color1 >> 8) & 0xFF;
@@ -137,58 +158,57 @@ uint32_t interpolateColor(uint32_t color1, uint32_t color2, float fraction) {
 // --------------------------------------------------------------------------
 void analyzeBuffer(uint8_t *buf, size_t bufSize) {
     //Log.info("Analyzing buffer...");
-    // Clear the terminal screen
-    //Log.info("\033[2J\033[H");
+    //Log.info("\033[2J\033[H");                // Clear the terminal screen
 
     // Analyze raw audio data
-    int16_t *audioData = (int16_t *)buf; // Assuming SIGNED_16 format
-    size_t samples = bufSize / sizeof(int16_t);
+    int16_t *audioData = (int16_t *)buf;        // Assuming SIGNED_16 format
+    size_t samples = bufSize / sizeof(int16_t); // Calculate the number of samples
 
     if (samples > FFT_SIZE) {
-        samples = FFT_SIZE; // Limit the number of samples to FFT_SIZE
+        samples = FFT_SIZE;                     // Limit the number of samples to FFT_SIZE
     }
 
     int energy = 0;
 
     // Prepare data for FFT
     for (size_t i = 0; i < samples; i++) {
-        vReal[i] = audioData[i];
-        vImag[i] = 0;
-        energy += abs(audioData[i]);
+        vReal[i] = audioData[i];                // Copy audio data to the real part
+        vImag[i] = 0;                           // Clear the imaginary part
+        energy += abs(audioData[i]);            // Calculate the energy
     }
 
-    energy /= samples; // Average energy
+    energy /= samples;                          // Average energy
 
-    // Apply Hamming window
+    // Apply Hamming window to reduce spectral leakage
     applyHammingWindow(vReal, samples);
 
     // Perform FFT
     //Log.info("Performing FFT...");
-    FFT.compute(vReal, vImag, samples, FFT_FORWARD);
-    FFT.complexToMagnitude(vReal, vImag, samples);
+    FFT.compute(vReal, vImag, samples, FFT_FORWARD);    // Perform FFT
+    FFT.complexToMagnitude(vReal, vImag, samples);      // Convert complex to magnitude
 
     // Log the average energy level
     //Log.info("Average Energy Level: %d", energy);
 
-    size_t nr_of_bins = 12;
+    size_t nr_of_bins = 12;                     // Number of bins to display
 
     // Select bins to cover a wide range of frequencies in pop music
     size_t selectedBins[nr_of_bins] = {3, 5, 7, 9, 11, 14, 17, 20, 23, 26, 29, 32}; // Adjust as needed
 
-    double maxMagnitude = 0;
-    size_t maxBinIndex = 0;
-    const double noiseFloorThreshold = 180.0; // Threshold to ignore noise
+    double maxMagnitude = 0;                    // Maximum magnitude
+    size_t maxBinIndex = 0;                     // Index of the maximum magnitude
+    const double noiseFloorThreshold = 180.0;   // Threshold to ignore noise
 
     // Find the maximum magnitude for scaling, ignoring noise
     for (size_t i = 0; i < nr_of_bins; i++) {
         size_t bin = selectedBins[i];
-        if (vReal[bin] > noiseFloorThreshold && vReal[bin] > maxMagnitude) {
-            maxMagnitude = vReal[bin];
-            maxBinIndex = i;
+        if (vReal[bin] > noiseFloorThreshold && vReal[bin] > maxMagnitude) {    // Ignore noise
+            maxMagnitude = vReal[bin];                                          // Update the maximum magnitude
+            maxBinIndex = i;                                                    // Update the index of the maximum magnitude
         }
     }
 
-    // Check if the first bin has the largest magnitude
+    // Check if the bin magnitudes are over the threshold, then drum
     if (vReal[2] > 300) {
         drum1();
     }
@@ -208,9 +228,9 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
         for (size_t i = 0; i < nr_of_bins; i++) {
             size_t bin = selectedBins[i];
             if (vReal[bin] > dynamicThreshold) {
-                vReal[bin] /= maxMagnitude;
+                vReal[bin] /= maxMagnitude;             // Normalize the magnitude
             } else {
-                vReal[bin] = 0; // Set to zero if below threshold
+                vReal[bin] = 0;                         // Set to zero if below threshold
             }
         }
 
@@ -218,8 +238,8 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
         // Apply a power function to enhance brightness variation
         const double gamma = 8.0; // Adjust gamma value to control contrast
         for (size_t i = 0; i < nr_of_bins; i++) {
-            size_t bin = selectedBins[i];
-            vReal[bin] = pow(vReal[bin], gamma);
+            size_t bin = selectedBins[i];           // Get the bin index
+            vReal[bin] = pow(vReal[bin], gamma);    // Apply gamma correction
         }
 
 
@@ -228,52 +248,51 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
         uint32_t colorEnd = strip.Color(0, 0, 255);     // Blue
 
          // Minimum brightness threshold
-        const float minBrightness = 0.01; // 1% brightness
+        const float minBrightness = 0.01;               // 1% brightness
 
         // Update NeoPixel LEDs based on the magnitudes
         for (size_t i = 0; i < nr_of_bins; i++) {
-            size_t bin = selectedBins[i];
-            float fraction = vReal[bin]; // Use the normalized magnitude as the fraction
+            size_t bin = selectedBins[i];               // Get the bin index
+            float fraction = vReal[bin];                // Use the normalized magnitude as the fraction
             uint32_t color = interpolateColor(colorStart, colorEnd, (float)i / (nr_of_bins - 1)); // Fixed color for each LED
 
-            uint8_t r = (color >> 16) & 0xFF;
-            uint8_t g = (color >> 8) & 0xFF;
-            uint8_t b = color & 0xFF;
+            uint8_t r = (color >> 16) & 0xFF;           // Extract the red component
+            uint8_t g = (color >> 8) & 0xFF;            // Extract the green component
+            uint8_t b = color & 0xFF;                   // Extract the blue component
 
             double_t maxBrightness = 0.95; // Maximum brightness is 95%
             // Adjust brightness based on the magnitude with a minimum threshold and scale to 95%
-            r = (uint8_t)(r * (fraction * (1.0 - minBrightness) + minBrightness) * maxBrightness);
-            g = (uint8_t)(g * (fraction * (1.0 - minBrightness) + minBrightness) * maxBrightness);
-            b = (uint8_t)(b * (fraction * (1.0 - minBrightness) + minBrightness) * maxBrightness);
+            r = (uint8_t)(r * (fraction * (1.0 - minBrightness) + minBrightness) * maxBrightness);  // Scale the red component
+            g = (uint8_t)(g * (fraction * (1.0 - minBrightness) + minBrightness) * maxBrightness);  // Scale the green component
+            b = (uint8_t)(b * (fraction * (1.0 - minBrightness) + minBrightness) * maxBrightness);  // Scale the blue component
 
-
-            strip.setPixelColor(i, strip.Color(r, g, b));
+            strip.setPixelColor(i, strip.Color(r, g, b));   // Set the color of the LED
         }
 
-        strip.show(); // Update the LEDs
+        strip.show();                                       // Update the LEDs
 
         // Print the vertical chart
-        const int chartHeight = 10; // Height of the chart in characters
+        const int chartHeight = 10;                         // Height of the chart in characters
         for (int row = chartHeight; row > 0; row--) {
             std::string rowStr;
             for (size_t i = 0; i < nr_of_bins; i++) {
                 size_t bin = selectedBins[i];
-                int barHeight = (int)((vReal[bin]) * chartHeight);
+                int barHeight = (int)((vReal[bin]) * chartHeight);  // Calculate the bar height
                 if (barHeight >= row) {
-                    rowStr += "| ";
+                    rowStr += "| ";                                 // Add a bar to the row
                 } else {
-                    rowStr += "  ";
+                    rowStr += "  ";                                 // Add an empty space to the row
                 }
             }
-            //Log.info(rowStr.c_str()); // Print the entire row at once
+            //Log.info(rowStr.c_str());                     // Print the entire row at once, uncomment to print
         }
 
         // Print the frequency labels
-        std::string labelStr;
+        std::string labelStr;                               // Create a string for the frequency labels
         for (size_t i = 0; i < nr_of_bins; i++) {
             size_t bin = selectedBins[i];
-            double frequency = bin * (SAMPLE_RATE / FFT_SIZE); // Calculate the frequency for each bin
-            labelStr += String::format("%.1f Hz ", frequency);
+            double frequency = bin * (SAMPLE_RATE / FFT_SIZE);  // Calculate the frequency for each bin
+            labelStr += String::format("%.1f Hz ", frequency);  // Add the frequency to the string
         }
         //Log.info(labelStr.c_str()); // Print the frequency labels
     // } else {
@@ -289,12 +308,12 @@ void analyzeBuffer(uint8_t *buf, size_t bufSize) {
 // --------------------------------------------------------------------------
 void buttonHandler(system_event_t event, int data) {
     Log.info("Button pressed");
-    startRecording = !startRecording; // Toggle recording state
+    startRecording = !startRecording;           // Toggle recording state
     if (!startRecording) {
-        digitalWrite(LED1_PIN, LOW); // Turn off recording LED when stopping
+        digitalWrite(LED1_PIN, LOW);            // Turn off recording LED when stopping
         // (No direct stop method for PDM sampling, so no call here)
     } else {
-        digitalWrite(LED1_PIN, HIGH); // Turn on recording LED when starting
+        digitalWrite(LED1_PIN, HIGH);           // Turn on recording LED when starting
     }
 }
 
@@ -309,14 +328,10 @@ void setup() {
     strip.begin();
     strip.show(); // Initialize all pixels to 'off'
 
-    //rainbowCycle(20);
-
+    // Initialize the servo motor
     myservo.attach(D1); // attaches the servo on the D1 pin to the servo object
-    // Wire.begin(); // Initialize I2C
 
-    drum1();
-    // Serial.begin(9600); // Start Serial communication
-
+    // Connect to the Particle cloud
     Particle.connect();
 
     // Register handler for the SETUP (Mode) button (single click)
@@ -332,9 +347,9 @@ void setup() {
 
     // Initialize and start the PDM microphone
     int err = Microphone_PDM::instance()
-        .withOutputSize(Microphone_PDM::OutputSize::SIGNED_16)
-        .withRange(Microphone_PDM::Range::RANGE_2048)
-        .withSampleRate(SAMPLE_RATE)
+        .withOutputSize(Microphone_PDM::OutputSize::SIGNED_16)      // 16-bit signed output
+        .withRange(Microphone_PDM::Range::RANGE_2048)               // 12-bit range
+        .withSampleRate(SAMPLE_RATE)                                // 16 kHz sample rate
         .init();
 
     if (err) {
@@ -373,9 +388,9 @@ void loop() {
                 // Mark that we're free to start another 1-second sample
                 isSamplingInProgress = false;
             });
-            samplingBuffer->withDurationMs(RECORDING_LENGTH_MS);
+            samplingBuffer->withDurationMs(RECORDING_LENGTH_MS);            // Set the recording length
 
-            // Start PDM sampling for the next 1 second
+            // Start PDM sampling for the next x second
             Microphone_PDM::instance().bufferSamplingStart(samplingBuffer);
         }
     } else {
@@ -384,8 +399,9 @@ void loop() {
     }
 }
 
-
-
+// --------------------------------------------------------------------------
+// Below functions are not used in the program, but can be used to create visual effects
+// --------------------------------------------------------------------------
 
 // Set all pixels in the strip to a solid color, then wait (ms)
 void colorAll(uint32_t c, uint16_t wait) {
@@ -407,6 +423,7 @@ void colorWipe(uint32_t c, uint8_t wait) {
   }
 }
 
+// Slightly different, this makes the rainbow equally distributed throughout, then wait (ms)
 void rainbow(uint8_t wait) {
   uint16_t i, j;
 
